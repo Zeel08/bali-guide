@@ -436,7 +436,8 @@
 <section class="view" id="expenses">
   <div class="vhead"><h2>💸 Expenses &amp; Split</h2></div>
   <div class="card"><div class="loc-badge">Expenses</div>
-    <p class="mini">Splitwise-style tracker. Saves on <b>this device</b> — best if one person logs everything; use <b>Export</b> to back up or share the file. Balances shown in your chosen currency.</p>
+    <p class="mini" id="sync-status">connecting…</p>
+    <p class="mini">Live shared ledger 🔗 — everyone on the same <b>trip code</b> syncs in real time across phones. Set a private code in Settings to keep it to your group.</p>
     <div class="totbar" id="totbar">Total group spend: —</div>
   </div>
 
@@ -472,6 +473,8 @@
   <div class="card"><div class="loc-badge">Expenses</div><span class="tag move">settings &amp; backup</span>
     <label class="mini">Members (comma-separated)</label>
     <input type="text" id="set-members">
+    <label class="mini" style="margin-top:8px">Trip code — share privately with your group (same code = same ledger)</label>
+    <input type="text" id="set-code" placeholder="bali-squad-3a9f2c7e">
     <div class="ex-row" style="margin-top:8px">
       <div><label class="mini">Show balances in</label><select id="set-disp"><option>INR</option><option>IDR</option><option>USD</option></select></div>
       <div><label class="mini">1 INR = ? IDR</label><input type="number" id="set-inr"></div>
@@ -498,6 +501,8 @@
 </main>
 <footer>Built from the squad's 133 saved reels + verified ferry/trek logistics · Jun 2026 · prices indicative, confirm at booking</footer>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
   // ---- tab navigation ----
   const tabs=document.getElementById('tabs');
@@ -553,31 +558,63 @@
     setTimeout(()=>{b.textContent=orig;b.classList.remove('ok')},1500);
   }));
 
-  // ---- expense tracker + split (Splitwise-style, localStorage) ----
+  // ---- expense tracker + split (LIVE sync via Firebase Realtime DB) ----
   (function(){
-    const KEY='bali_split';
-    const DEF={members:["Zeel","Rajat","Siddharth","Saransh","Manoj"],disp:"INR",rateINR:190,rateUSD:16000,expenses:[]};
-    let st=Object.assign({},DEF,JSON.parse(localStorage.getItem(KEY)||'{}'));
-    if(!Array.isArray(st.members)||!st.members.length)st.members=DEF.members.slice();
-    if(!Array.isArray(st.expenses))st.expenses=[];
-    const save=()=>localStorage.setItem(KEY,JSON.stringify(st));
+    const firebaseConfig={
+      apiKey:"AIzaSyDpQP2KnQp6JFhs7RRe0bNkDZJibApNaMc",
+      authDomain:"bali-trip-e9ee3.firebaseapp.com",
+      databaseURL:"https://bali-trip-e9ee3-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId:"bali-trip-e9ee3",
+      storageBucket:"bali-trip-e9ee3.firebasestorage.app",
+      messagingSenderId:"318338536101",
+      appId:"1:318338536101:web:1095c0fda4a2cb3de4734c"
+    };
+    const DEFAULT_CODE="bali-squad-3a9f2c7e";
+    const CACHE='bali_split_cache',CODEKEY='bali_trip_code',DISPKEY='bali_disp';
+    const DEFM=["Zeel","Rajat","Siddharth","Saransh","Manoj"];
+    let st={members:DEFM.slice(),rateINR:190,rateUSD:16000,expenses:[]};
+    let disp=localStorage.getItem(DISPKEY)||"INR";
+    let code=localStorage.getItem(CODEKEY)||DEFAULT_CODE;
+    try{const c=JSON.parse(localStorage.getItem(CACHE)||'null');if(c)st=Object.assign(st,c);}catch(e){}
     const $=id=>document.getElementById(id);
     const sym={INR:'₹',IDR:'Rp ',USD:'$'};
     const toIDR=(a,c)=>c==='IDR'?a:c==='INR'?a*st.rateINR:a*st.rateUSD;
-    const fromIDR=idr=>{const d=st.disp;return d==='IDR'?idr:d==='INR'?idr/st.rateINR:idr/st.rateUSD;};
-    const fmt=idr=>{const v=fromIDR(idr),d=st.disp;
-      return d==='USD'?'$'+v.toFixed(2):sym[d]+Math.round(v).toLocaleString(d==='INR'?'en-IN':'en-US');};
+    const fromIDR=idr=>disp==='IDR'?idr:disp==='INR'?idr/st.rateINR:idr/st.rateUSD;
+    const fmt=idr=>{const v=fromIDR(idr);return disp==='USD'?'$'+v.toFixed(2):sym[disp]+Math.round(v).toLocaleString(disp==='INR'?'en-IN':'en-US');};
+    const cache=()=>localStorage.setItem(CACHE,JSON.stringify(st));
+    const setStatus=(t,ok)=>{const el=$('sync-status');if(el){el.textContent=t;el.style.color=ok?'#0a8a55':'var(--hot)';el.style.fontWeight='700';}};
+
+    let db=null,expRef=null,setRef=null,ready=false;
+    function subscribe(){
+      if(!db)return;
+      if(expRef)expRef.off();if(setRef)setRef.off();
+      const base='trips/'+code;
+      setRef=db.ref(base+'/settings');expRef=db.ref(base+'/expenses');
+      setRef.once('value',s=>{if(!s.exists())s.ref.set({members:st.members,rateINR:st.rateINR,rateUSD:st.rateUSD});});
+      setRef.on('value',s=>{const v=s.val();if(v){if(Array.isArray(v.members)&&v.members.length)st.members=v.members;
+        if(v.rateINR)st.rateINR=+v.rateINR;if(v.rateUSD)st.rateUSD=+v.rateUSD;}cache();fillForm();render();});
+      expRef.on('value',s=>{const v=s.val()||{};st.expenses=Object.keys(v).map(id=>Object.assign({id},v[id]));
+        st.expenses.sort((a,b)=>(a.ts||0)-(b.ts||0));cache();render();});
+    }
+    function initCloud(){
+      try{
+        firebase.initializeApp(firebaseConfig);db=firebase.database();ready=true;
+        db.ref('.info/connected').on('value',s=>setStatus(s.val()?'● Live — synced across phones':'○ Offline — changes sync when back online',!!s.val()));
+        subscribe();
+      }catch(e){ready=false;setStatus('⚠ Sync unavailable — using this device only',false);}
+    }
 
     function fillForm(){
       $('ex-payer').innerHTML=st.members.map(m=>`<option>${m}</option>`).join('');
       $('ex-among').innerHTML=st.members.map(m=>`<label class="on"><input type="checkbox" value="${m}" checked>${m}</label>`).join('');
       $('ex-among').querySelectorAll('input').forEach(c=>c.addEventListener('change',()=>c.parentElement.classList.toggle('on',c.checked)));
-      $('set-members').value=st.members.join(', ');$('set-disp').value=st.disp;$('set-inr').value=st.rateINR;$('set-usd').value=st.rateUSD;
+      $('set-members').value=st.members.join(', ');$('set-disp').value=disp;$('set-inr').value=st.rateINR;$('set-usd').value=st.rateUSD;
+      const tc=$('set-code');if(tc)tc.value=code;
     }
     function compute(){
       const net={};st.members.forEach(m=>net[m]=0);let total=0;
-      st.expenses.forEach(e=>{const idr=toIDR(e.amount,e.cur);total+=idr;
-        const among=e.among.filter(m=>net.hasOwnProperty(m));
+      st.expenses.forEach(e=>{const idr=toIDR(+e.amount,e.cur);total+=idr;
+        const among=(e.among||[]).filter(m=>net.hasOwnProperty(m));
         if(net.hasOwnProperty(e.payer))net[e.payer]+=idr;
         const share=among.length?idr/among.length:0;among.forEach(m=>net[m]-=share);});
       return{net,total};
@@ -599,32 +636,41 @@
       const tx=settleUp(net);
       $('settlements').innerHTML=tx.length?tx.map(t=>`<div class="settle"><b>${t.from}</b> → <b>${t.to}</b> &nbsp;<span class="amt">${fmt(t.idr)}</span></div>`).join(''):'<p class="mini">All settled up 🎉</p>';
       $('exp-list').innerHTML=st.expenses.length?st.expenses.slice().reverse().map(e=>
-        `<div class="exp"><div><div>${e.desc||'(no name)'}</div><div class="meta">${e.payer} paid · ${e.method} · split ${e.among.length}/${st.members.length}</div></div><div style="text-align:right"><span class="amt">${sym[e.cur]}${e.amount.toLocaleString()}</span><button class="del" data-id="${e.id}">✕</button></div></div>`).join(''):'<p class="mini">No expenses yet — add one above.</p>';
-      $('exp-list').querySelectorAll('.del').forEach(b=>b.addEventListener('click',()=>{st.expenses=st.expenses.filter(x=>x.id!=b.dataset.id);save();render();}));
+        `<div class="exp"><div><div>${e.desc||'(no name)'}</div><div class="meta">${e.payer} paid · ${e.method} · split ${(e.among||[]).length}/${st.members.length}</div></div><div style="text-align:right"><span class="amt">${sym[e.cur]}${(+e.amount).toLocaleString()}</span><button class="del" data-id="${e.id}">✕</button></div></div>`).join(''):'<p class="mini">No expenses yet — add one above.</p>';
+      $('exp-list').querySelectorAll('.del').forEach(b=>b.addEventListener('click',()=>{
+        if(ready&&expRef){expRef.child(b.dataset.id).remove();}else{st.expenses=st.expenses.filter(x=>x.id!=b.dataset.id);cache();render();}}));
     }
     $('ex-add').addEventListener('click',()=>{
       const amt=parseFloat($('ex-amt').value);
       if(!amt||amt<=0){alert('Enter an amount');return;}
       const among=[...$('ex-among').querySelectorAll('input:checked')].map(c=>c.value);
       if(!among.length){alert('Pick at least one person to split between');return;}
-      st.expenses.push({id:Date.now()+''+Math.floor(Math.random()*999),desc:$('ex-desc').value.trim(),amount:amt,cur:$('ex-cur').value,payer:$('ex-payer').value,method:$('ex-method').value,among,ts:Date.now()});
-      save();$('ex-desc').value='';$('ex-amt').value='';render();
+      const exp={desc:$('ex-desc').value.trim(),amount:amt,cur:$('ex-cur').value,payer:$('ex-payer').value,method:$('ex-method').value,among,ts:Date.now()};
+      if(ready&&expRef){expRef.push(exp);}else{exp.id=Date.now()+''+Math.floor(Math.random()*999);st.expenses.push(exp);cache();render();}
+      $('ex-desc').value='';$('ex-amt').value='';
     });
     $('set-save').addEventListener('click',()=>{
       const mm=$('set-members').value.split(',').map(s=>s.trim()).filter(Boolean);if(mm.length)st.members=mm;
-      st.disp=$('set-disp').value;st.rateINR=parseFloat($('set-inr').value)||st.rateINR;st.rateUSD=parseFloat($('set-usd').value)||st.rateUSD;
-      save();fillForm();render();
+      disp=$('set-disp').value;localStorage.setItem(DISPKEY,disp);
+      st.rateINR=parseFloat($('set-inr').value)||st.rateINR;st.rateUSD=parseFloat($('set-usd').value)||st.rateUSD;
+      const nc=($('set-code').value||'').trim();
+      if(nc&&nc!==code){code=nc;localStorage.setItem(CODEKEY,code);if(ready)subscribe();}
+      if(ready&&setRef){setRef.set({members:st.members,rateINR:st.rateINR,rateUSD:st.rateUSD});}
+      cache();fillForm();render();
     });
     $('ex-export').addEventListener('click',()=>{const blob=new Blob([JSON.stringify(st,null,2)],{type:'application/json'});
       const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='bali-expenses.json';a.click();});
     $('ex-import').addEventListener('click',()=>{const inp=document.createElement('input');inp.type='file';inp.accept='.json,application/json';
       inp.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
-        r.onload=()=>{try{const d=JSON.parse(r.result);st=Object.assign({},DEF,d);
-          if(!Array.isArray(st.members)||!st.members.length)st.members=DEF.members.slice();
-          if(!Array.isArray(st.expenses))st.expenses=[];save();fillForm();render();alert('Imported '+st.expenses.length+' expenses');}catch(err){alert('Could not read that file');}};
+        r.onload=()=>{try{const d=JSON.parse(r.result);if(Array.isArray(d.expenses)){
+          if(ready&&expRef){d.expenses.forEach(x=>{const o=Object.assign({},x);delete o.id;expRef.push(o);});}
+          else{st.expenses=d.expenses;cache();render();}alert('Imported '+d.expenses.length+' expenses');}}catch(err){alert('Could not read that file');}};
         r.readAsText(f);};inp.click();});
-    $('ex-clear').addEventListener('click',()=>{if(confirm('Delete ALL expenses on this device?')){st.expenses=[];save();render();}});
+    $('ex-clear').addEventListener('click',()=>{if(confirm('Delete ALL expenses for this trip code?')){
+      if(ready&&expRef){expRef.remove();}else{st.expenses=[];cache();render();}}});
+
     fillForm();render();
+    if(window.firebase&&firebaseConfig.apiKey){initCloud();}else{setStatus('⚠ Sync unavailable — using this device only',false);}
   })();
 </script>
 </body>
