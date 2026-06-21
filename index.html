@@ -524,6 +524,10 @@
   <div class="card"><div class="loc-badge">Expenses</div><span class="tag eat">balances</span>
     <div id="balances"><p class="mini">No expenses yet.</p></div>
   </div>
+  <div class="card"><div class="loc-badge">Expenses</div><span class="tag">per-person summary</span>
+    <p class="mini"><b>Paid</b> = put in from their pocket · <b>Share</b> = their portion of the bills</p>
+    <div id="summary"><p class="mini">No expenses yet.</p></div>
+  </div>
   <div class="card"><div class="loc-badge">Expenses</div><span class="tag warn">settle up · fewest transfers</span>
     <div id="settlements"><p class="mini">No balances yet.</p></div>
   </div>
@@ -699,13 +703,14 @@
       $('set-members').value=st.members.join(', ');
       const tc=$('set-code');if(tc)tc.value=code;
     }
-    function compute(){ // per-currency, no conversion
+    function compute(){ // per-currency, no conversion; tracks paid + share
       const curs={};
-      st.expenses.forEach(e=>{const c=e.cur;if(!curs[c])curs[c]={net:{},total:0};
-        const N=curs[c].net;st.members.forEach(m=>{if(!(m in N))N[m]=0;});
-        const amt=+e.amount;curs[c].total+=amt;
-        if(!(e.payer in N))N[e.payer]=0;N[e.payer]+=amt;
-        const sp=e.splits||{};Object.keys(sp).forEach(m=>{if(!(m in N))N[m]=0;N[m]-=+sp[m];});});
+      st.expenses.forEach(e=>{const c=e.cur;if(!curs[c])curs[c]={net:{},paid:{},owed:{},total:0};
+        const C=curs[c],amt=+e.amount;C.total+=amt;
+        C.paid[e.payer]=(C.paid[e.payer]||0)+amt;
+        const sp=e.splits||{};Object.keys(sp).forEach(m=>{C.owed[m]=(C.owed[m]||0)+(+sp[m]);});});
+      Object.values(curs).forEach(C=>{const ks=new Set([...st.members,...Object.keys(C.paid),...Object.keys(C.owed)]);
+        ks.forEach(m=>{C.net[m]=(C.paid[m]||0)-(C.owed[m]||0);});});
       return curs;
     }
     function settleUp(net){
@@ -725,12 +730,17 @@
           return`<div class="bal"><span>${m}</span><span class="${cls}">${v>0?'gets back '+fmt(v,c):'owes '+fmt(-v,c)}</span></div>`;}).join('');
         return`<div class="curblock"><div class="curlabel">${c}</div>${rows||'<div class="bal"><span class="mini">all settled</span></div>'}</div>`;
       }).join(''):'<p class="mini">No expenses yet.</p>';
+      $('summary').innerHTML=cl.length?cl.map(c=>{const C=curs[c];
+        const rows=memberList(C.net).map(m=>{const p=C.paid[m]||0,o=C.owed[m]||0;if(p<0.5&&o<0.5)return '';
+          return`<div class="bal"><span>${m}</span><span style="color:var(--muted)">paid <b style="color:var(--ink)">${fmt(p,c)}</b> · share <b style="color:var(--ink)">${fmt(o,c)}</b></span></div>`;}).join('');
+        return`<div class="curblock"><div class="curlabel">${c}</div>${rows}</div>`;
+      }).join(''):'<p class="mini">No expenses yet.</p>';
       const blocks=cl.map(c=>{const tx=settleUp(curs[c].net);if(!tx.length)return '';
         return`<div class="curblock"><div class="curlabel">${c}</div>${tx.map(t=>`<div class="settle"><b>${t.from}</b> → <b>${t.to}</b> &nbsp;<span class="amt">${fmt(t.v,c)}</span></div>`).join('')}</div>`;}).filter(Boolean).join('');
       $('settlements').innerHTML=cl.length?(blocks||'<p class="mini">All settled up 🎉</p>'):'<p class="mini">No balances yet.</p>';
       $('exp-list').innerHTML=st.expenses.length?st.expenses.slice().reverse().map(e=>{
         const np=Object.keys(e.splits||{}).length,uneq=e.mode==='unequal';
-        const dt=e.ts?new Date(e.ts):null,ds=dt?dt.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+', '+dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'';
+        const dt=e.ts?new Date(e.ts):null,ds=dt?dt.toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'Asia/Makassar'})+', '+dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZone:'Asia/Makassar'})+' WITA':'';
         return`<div class="exp"><div><div>${e.desc||'(no name)'}</div><div class="meta">${e.payer} paid · ${e.method} · ${uneq?'unequal':'split'} ${np}/${st.members.length}${ds?' · '+ds:''}</div></div><div style="text-align:right"><span class="amt">${fmt(+e.amount,e.cur)}</span><button class="del" data-id="${e.id}">✕</button></div></div>`;
       }).join(''):'<p class="mini">No expenses yet — add one above.</p>';
       $('exp-list').querySelectorAll('.del').forEach(b=>b.addEventListener('click',()=>{
