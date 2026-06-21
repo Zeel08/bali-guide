@@ -150,9 +150,9 @@
   <div class="vhead"><h2>Overview</h2></div>
   <div class="card">
     <div class="loc-badge">Overview</div>
-    <span class="tag">money anchor</span>
-    <p><span class="big">$1 ≈ ₹84</span> · ₹1 ≈ 190 IDR · $1 ≈ 16,000 IDR · IDR 100,000 ≈ ₹525 ≈ $6.3</p>
-    <p class="note">Rough only. So "350k IDR" ≈ ₹1,850 / $22, and $100 ≈ ₹8,400.</p>
+    <span class="tag">money anchor · live rates</span>
+    <p id="fx-line"><span class="big">$1 ≈ ₹94</span> · ₹1 ≈ 188 IDR · $1 ≈ 17,800 IDR · IDR 100,000 ≈ ₹530 ≈ $5.6</p>
+    <p class="note" id="fx-note">Loading live rates…</p>
   </div>
   <div class="card">
     <div class="loc-badge">Overview</div>
@@ -614,6 +614,26 @@
     const orig=b.textContent;b.textContent='✓ Copied';b.classList.add('ok');
     setTimeout(()=>{b.textContent=orig;b.classList.remove('ok')},1500);
   }));
+
+  // ---- live FX rates for the Overview money anchor ----
+  (function(){
+    const line=document.getElementById('fx-line'),note=document.getElementById('fx-note');
+    if(!line)return;
+    const rupee=n=>'₹'+Math.round(n).toLocaleString('en-IN');
+    const grp=n=>Math.round(n).toLocaleString('en-US');
+    function paint(uInr,uIdr,when,live){
+      const inrIdr=uIdr/uInr;
+      line.innerHTML='<span class="big">$1 ≈ '+rupee(uInr)+'</span> · ₹1 ≈ '+inrIdr.toFixed(0)+' IDR · $1 ≈ '+grp(uIdr)+' IDR · IDR 100,000 ≈ '+rupee(100000/inrIdr)+' ≈ $'+(100000/uIdr).toFixed(1);
+      note.textContent=(live?'● Live · updated ':'(last known) · ')+(when||'—')+' · "350k IDR" ≈ '+rupee(350000/inrIdr)+' / $'+(350000/uIdr).toFixed(0);
+      note.style.color=live?'#0a8a55':'var(--muted)';
+    }
+    fetch('https://open.er-api.com/v6/latest/USD').then(r=>r.json()).then(d=>{
+      if(!d||!d.rates||!d.rates.INR||!d.rates.IDR)throw 0;
+      const when=(d.time_last_update_utc||'').replace(/\d\d:\d\d:\d\d.*/,'').trim();
+      localStorage.setItem('fx_cache',JSON.stringify({uInr:d.rates.INR,uIdr:d.rates.IDR,when}));
+      paint(d.rates.INR,d.rates.IDR,when,true);
+    }).catch(()=>{try{const c=JSON.parse(localStorage.getItem('fx_cache'));if(c){paint(c.uInr,c.uIdr,c.when,false);}else{note.textContent='(Offline — showing rough rates.)';}}catch(e){note.textContent='(Offline — showing rough rates.)';}});
+  })();
 
   // ---- expense tracker + split (LIVE sync; multi-currency, equal/unequal, NO conversion) ----
   (function(){
