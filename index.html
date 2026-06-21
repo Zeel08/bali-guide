@@ -729,7 +729,8 @@
       $('settlements').innerHTML=cl.length?(blocks||'<p class="mini">All settled up 🎉</p>'):'<p class="mini">No balances yet.</p>';
       $('exp-list').innerHTML=st.expenses.length?st.expenses.slice().reverse().map(e=>{
         const np=Object.keys(e.splits||{}).length,uneq=e.mode==='unequal';
-        return`<div class="exp"><div><div>${e.desc||'(no name)'}</div><div class="meta">${e.payer} paid · ${e.method} · ${uneq?'unequal':'split'} ${np}/${st.members.length}</div></div><div style="text-align:right"><span class="amt">${fmt(+e.amount,e.cur)}</span><button class="del" data-id="${e.id}">✕</button></div></div>`;
+        const dt=e.ts?new Date(e.ts):null,ds=dt?dt.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+', '+dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'';
+        return`<div class="exp"><div><div>${e.desc||'(no name)'}</div><div class="meta">${e.payer} paid · ${e.method} · ${uneq?'unequal':'split'} ${np}/${st.members.length}${ds?' · '+ds:''}</div></div><div style="text-align:right"><span class="amt">${fmt(+e.amount,e.cur)}</span><button class="del" data-id="${e.id}">✕</button></div></div>`;
       }).join(''):'<p class="mini">No expenses yet — add one above.</p>';
       $('exp-list').querySelectorAll('.del').forEach(b=>b.addEventListener('click',()=>{
         if(ready&&expRef){expRef.child(b.dataset.id).remove();}else{st.expenses=st.expenses.filter(x=>x.id!=b.dataset.id);cache();render();}}));
