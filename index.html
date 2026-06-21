@@ -45,6 +45,12 @@
   .vhead .days{color:var(--accent2);font-size:.8rem;font-weight:700;background:var(--chip);padding:3px 10px;border-radius:14px}
   .stay{font-size:.8rem;color:var(--muted);margin:-6px 0 14px}
   .stay b{color:var(--ink)}
+  .addr{color:var(--ink);font-weight:600}
+  .copy{margin-left:6px;border:1px solid var(--line);background:var(--chip);color:var(--accent);
+        border-radius:8px;padding:3px 9px;font-size:.72rem;font-weight:700;cursor:pointer;white-space:nowrap}
+  .copy.ok{color:#0a8a55;border-color:#0a8a55}
+  .host{display:inline-block;margin-top:6px;color:var(--muted)}
+  .host a{color:var(--accent);text-decoration:none;font-weight:600}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 15px;margin:0 0 12px;
        box-shadow:0 2px 12px rgba(20,45,85,.06)}
   .card h3{margin:0 0 8px;font-size:1rem;display:flex;align-items:center;gap:8px}
@@ -159,7 +165,9 @@
 <!-- UBUD -->
 <section class="view" id="ubud">
   <div class="vhead"><h2>🌿 Ubud</h2><span class="days">Days 1–3</span></div>
-  <div class="stay">🛏️ Stay: <b>Airbnb, Jalan Made Lebah</b> (south Ubud, walkable cafes)</div>
+  <div class="stay">🛏️ <b>Stay:</b> Airbnb — <span class="addr">Jalan Made Lebah, Kecamatan Ubud, Bali 80571</span>
+    <button class="copy" data-copy="Jalan Made Lebah, Kecamatan Ubud, Bali 80571">📋 Copy</button><br>
+    <span class="host">Host: Annisaa · 📞 <a href="tel:+628121063075">+62 812-1063-075</a></span></div>
   <div class="card"><div class="loc-badge">Ubud</div><span class="tag">Day 1 · arrival</span>
     <p>Land 11:00 → immigration ~1.5–2h → drive ~1.5h → <b>reach Airbnb ~3–4 PM</b>. Treat Day 1 as chill + one evening outing.</p>
     <ul><li>Stroll Ubud center / Ubud Palace, dinner at a veg spot.</li>
@@ -252,7 +260,10 @@
 <!-- CANGGU -->
 <section class="view" id="canggu">
   <div class="vhead"><h2>🏄 Canggu / Kuta Utara</h2><span class="days">Days 7–8</span></div>
-  <div class="stay">🛏️ Stay: <b>Airbnb, Kuta Utara</b> — note: "North Kuta" = the <b>Canggu/Kerobokan zone</b>, not Kuta Beach. Finns & Mexicola are ~15 min away.</div>
+  <div class="stay">🛏️ <b>Stay:</b> Airbnb — <span class="addr">Jalan Raya Kerobokan No.101, Kecamatan Kuta Utara, Bali 80361</span>
+    <button class="copy" data-copy="Jalan Raya Kerobokan No.101, Kecamatan Kuta Utara, Bali 80361, Indonesia">📋 Copy</button><br>
+    <span class="host">Host: Iluh · 📞 <a href="tel:+6287863363704">+62 878-6336-3704</a></span><br>
+    <span class="note">"North Kuta" = the Canggu/Kerobokan zone, not Kuta Beach — Finns &amp; Mexicola ~15 min away.</span></div>
   <div class="card"><div class="loc-badge">Canggu</div><span class="tag see">Day 8 · beach clubs + nightlife</span>
     <ul>
       <li><b>Day:</b> cafe-hop Canggu/Berawa, beach time (Berawa/Echo Beach), shopping.</li>
@@ -445,6 +456,15 @@
     w.querySelector('input').addEventListener('change',e=>{saved[id]=e.target.checked;
       localStorage.setItem('bali_checks',JSON.stringify(saved));});
   });
+
+  // ---- copy address to clipboard (for Grab/Gojek) ----
+  document.querySelectorAll('.copy').forEach(b=>b.addEventListener('click',async()=>{
+    try{await navigator.clipboard.writeText(b.dataset.copy);}catch(e){
+      const t=document.createElement('textarea');t.value=b.dataset.copy;document.body.appendChild(t);
+      t.select();document.execCommand('copy');t.remove();}
+    const orig=b.textContent;b.textContent='✓ Copied';b.classList.add('ok');
+    setTimeout(()=>{b.textContent=orig;b.classList.remove('ok')},1500);
+  }));
 </script>
 </body>
 </html>
